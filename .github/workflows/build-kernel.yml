@@ -7,22 +7,67 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: 'Kernel source repository URL (e.g., https://github.com/YOUR_USERNAME/YOUR_KERNEL_REPO.git)'
+        required: true
+        type: string
+      kernel_branch:
+        description: 'Kernel source branch (e.g., main, android-12.0)'
+        required: true
+        type: string
+      toolchain_repo:
+        description: 'Toolchain repository URL (optional, leave blank if toolchains are in kernel repo)'
+        required: false
+        type: string
+      toolchain_branch:
+        description: 'Toolchain branch (optional, used if toolchain_repo is provided)'
+        required: false
+        type: string
 
 env:
   KERNEL_DIR: ${{ github.workspace }}/kernel
+  TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
   OUTPUT_DIR: out
   RELEASE_NAME: MyKernel-${{ github.sha }}
+  KERNEL_REPO: https://github.com/YOUR_USERNAME/YOUR_KERNEL_REPO.git # Replace with your default kernel repo
+  KERNEL_BRANCH: main # Replace with your default kernel branch
+  TOOLCHAIN_REPO: '' # Replace with toolchain repo URL if not in kernel repo
+  TOOLCHAIN_BRANCH: main # Replace with toolchain branch if applicable
 
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the kernel source code
-      - name: Checkout Kernel Repository
+      # Checkout the workflow repository (for package_kernel.sh)
+      - name: Checkout Workflow Repository
         uses: actions/checkout@v4
         with:
-          path: kernel
+          path: workflow
+
+      # Determine kernel repo and branch
+      - name: Set Kernel Source
+        run: |
+          echo "KERNEL_REPO=${{ github.event.inputs.kernel_repo || env.KERNEL_REPO }}" >> $GITHUB_ENV
+          echo "KERNEL_BRANCH=${{ github.event.inputs.kernel_branch || env.KERNEL_BRANCH }}" >> $GITHUB_ENV
+          echo "TOOLCHAIN_REPO=${{ github.event.inputs.toolchain_repo || env.TOOLCHAIN_REPO }}" >> $GITHUB_ENV
+          echo "TOOLCHAIN_BRANCH=${{ github.event.inputs.toolchain_branch || env.TOOLCHAIN_BRANCH }}" >> $GITHUB_ENV
+
+      # Clone the kernel source
+      - name: Clone Kernel Source
+        run: |
+          git clone --depth 1 --branch ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} ${{ env.KERNEL_DIR }}
+
+      # Clone toolchains (if not in kernel repo)
+      - name: Clone Toolchains
+        if: env.TOOLCHAIN_REPO != ''
+        run: |
+          mkdir -p ${{ env.TOOLCHAIN_DIR }}
+          git clone --depth 1 --branch ${{ env.TOOLCHAIN_BRANCH }} ${{ env.TOOLCHAIN_REPO }} ${{ env.TOOLCHAIN_DIR }}
+          mv ${{ env.TOOLCHAIN_DIR }}/toolchains-gcc-12.3.0 ${{ env.TOOLCHAIN_DIR }}/toolchains-gcc-12.3.0
+          mv ${{ env.TOOLCHAIN_DIR }}/clang ${{ env.TOOLCHAIN_DIR }}/clang
 
       # Install dependencies
       - name: Install Dependencies
@@ -30,12 +75,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git bc bison flex libssl-dev make gcc zip
 
-      # Run the build script
+      # Verify and run build_kernel.sh from kernel source
       - name: Run Build Script
         run: |
-          cd $KERNEL_DIR
+          cd ${{ env.KERNEL_DIR }}
+          if [[ ! -f build_kernel.sh ]]; then
+            echo "Error: build_kernel.sh not found in kernel source"
+            exit 1
+          fi
           chmod +x build_kernel.sh
-          ./build_kernel.sh package
+          ./build_kernel.sh
+
+      # Copy package_kernel.sh to kernel directory
+      - name: Copy Package Script
+        run: |
+          cp ${{ github.workspace }}/workflow/package_kernel.sh ${{ env.KERNEL_DIR }}/
+          chmod +x ${{ env.KERNEL_DIR }}/package_kernel.sh
+
+      # Package the kernel
+      - name: Package Kernel
+        run: |
+          cd ${{ env.KERNEL_DIR }}
+          ./package_kernel.sh
 
       # Upload the kernel artifact
       - name: Upload Kernel Artifact
@@ -44,9 +105,9 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
 
-      # Create a GitHub Release (optional, for push events)
+      # Create a GitHub Release (for push or workflow_dispatch)
       - name: Create Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,13 +116,14 @@ jobs:
           release_name: Kernel Build ${{ github.run_number }}
           body: |
             Automated kernel build for commit ${{ github.sha }}.
+            Kernel Source: ${{ env.KERNEL_REPO }} (Branch: ${{ env.KERNEL_BRANCH }})
             Built with GCC 12.3.0 and Clang r416183b1.
           draft: false
           prerelease: false
 
       # Upload kernel to release
       - name: Upload Kernel to Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
