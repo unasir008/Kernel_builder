@@ -10,21 +10,31 @@ on:
   workflow_dispatch:
     inputs:
       kernel_repo:
-        description: 'Kernel source repository URL (e.g., https://github.com/YOUR_USERNAME/YOUR_KERNEL_REPO.git)'
+        description: 'Kernel source repository URL'
         required: true
         type: string
       kernel_branch:
-        description: 'Kernel source branch (e.g., main, android-12.0)'
+        description: 'Kernel source branch'
         required: true
         type: string
       toolchain_repo:
-        description: 'Toolchain repository URL (optional, leave blank if toolchains are in kernel repo)'
+        description: 'Toolchain repository URL (optional)'
         required: false
         type: string
       toolchain_branch:
-        description: 'Toolchain branch (optional, used if toolchain_repo is provided)'
+        description: 'Toolchain branch (optional)'
         required: false
         type: string
+      anykernel_repo:
+        description: 'AnyKernel repository URL'
+        required: false
+        type: string
+        default: 'https://github.com/unasir008/anykernel.git'
+      anykernel_branch:
+        description: 'AnyKernel branch'
+        required: false
+        type: string
+        default: 'main'
 
 permissions:
   contents: write
@@ -33,31 +43,36 @@ permissions:
 env:
   KERNEL_DIR: ${{ github.workspace }}/kernel
   TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
+  ANYKERNEL_DIR: ${{ github.workspace }}/anykernel
   OUTPUT_DIR: out
   RELEASE_NAME: MyKernel-${{ github.sha }}
   KERNEL_REPO: https://github.com/unasir008/android_kernel_samsung_a12.git
   KERNEL_BRANCH: a125f-s6
   TOOLCHAIN_REPO: ''
   TOOLCHAIN_BRANCH: main
+  ANYKERNEL_REPO: https://github.com/unasir008/anykernel.git
+  ANYKERNEL_BRANCH: main
 
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the workflow repository (for package_kernel.sh)
+      # Checkout the workflow repository
       - name: Checkout Workflow Repository
         uses: actions/checkout@v4
         with:
           path: workflow
 
-      # Determine kernel repo and branch
-      - name: Set Kernel Source
+      # Determine kernel and AnyKernel repos
+      - name: Set Repositories
         run: |
           echo "KERNEL_REPO=${{ github.event.inputs.kernel_repo || env.KERNEL_REPO }}" >> $GITHUB_ENV
           echo "KERNEL_BRANCH=${{ github.event.inputs.kernel_branch || env.KERNEL_BRANCH }}" >> $GITHUB_ENV
           echo "TOOLCHAIN_REPO=${{ github.event.inputs.toolchain_repo || env.TOOLCHAIN_REPO }}" >> $GITHUB_ENV
           echo "TOOLCHAIN_BRANCH=${{ github.event.inputs.toolchain_branch || env.TOOLCHAIN_BRANCH }}" >> $GITHUB_ENV
+          echo "ANYKERNEL_REPO=${{ github.event.inputs.anykernel_repo || env.ANYKERNEL_REPO }}" >> $GITHUB_ENV
+          echo "ANYKERNEL_BRANCH=${{ github.event.inputs.anykernel_branch || env.ANYKERNEL_BRANCH }}" >> $GITHUB_ENV
 
       # Clone the kernel source
       - name: Clone Kernel Source
@@ -73,13 +88,18 @@ jobs:
           mv ${{ env.TOOLCHAIN_DIR }}/toolchains-gcc-12.3.0 ${{ env.TOOLCHAIN_DIR }}/toolchains-gcc-12.3.0
           mv ${{ env.TOOLCHAIN_DIR }}/clang ${{ env.TOOLCHAIN_DIR }}/clang
 
+      # Clone AnyKernel repository
+      - name: Clone AnyKernel Repository
+        run: |
+          git clone --depth 1 --branch ${{ env.ANYKERNEL_BRANCH }} ${{ env.ANYKERNEL_REPO }} ${{ env.ANYKERNEL_DIR }}
+
       # Install dependencies
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git bc bison flex libssl-dev make gcc zip
 
-      # Verify and run build_kernel.sh from kernel source
+      # Run build_kernel.sh from kernel source
       - name: Run Build Script
         run: |
           cd ${{ env.KERNEL_DIR }}
@@ -90,17 +110,14 @@ jobs:
           chmod +x build_kernel.sh
           ./build_kernel.sh
 
-      # Copy package_kernel.sh to kernel directory
-      - name: Copy Package Script
+      # Package kernel with AnyKernel3
+      - name: Package Kernel with AnyKernel3
         run: |
-          cp ${{ github.workspace }}/workflow/package_kernel.sh ${{ env.KERNEL_DIR }}/
-          chmod +x ${{ env.KERNEL_DIR }}/package_kernel.sh
-
-      # Package the kernel
-      - name: Package Kernel
-        run: |
-          cd ${{ env.KERNEL_DIR }}
-          ./package_kernel.sh
+          cd ${{ env.ANYKERNEL_DIR }}
+          cp ${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image .
+          zip -r9 ${{ env.RELEASE_NAME }}.zip * -x .git README.md *placeholder
+          mv ${{ env.RELEASE_NAME }}.zip ${{ env.KERNEL_DIR }}/
+          echo "Kernel packaged as ${{ env.RELEASE_NAME }}.zip"
 
       # Upload the kernel artifact
       - name: Upload Kernel Artifact
@@ -111,7 +128,7 @@ jobs:
           if-no-files-found: error
           compression-level: 6
 
-      # Create a GitHub Release and upload asset (only for push or workflow_dispatch)
+      # Create a GitHub Release and upload asset
       - name: Create Release and Upload Asset
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -122,6 +139,7 @@ jobs:
             Automated kernel build for commit ${{ github.sha }}.
             Kernel Source: ${{ env.KERNEL_REPO }} (Branch: ${{ env.KERNEL_BRANCH }})
             Built with GCC 12.3.0 and Clang r416183b1.
+            Packaged with AnyKernel3: ${{ env.ANYKERNEL_REPO }} (Branch: ${{ env.ANYKERNEL_BRANCH }})
           draft: false
           prerelease: false
           files: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
