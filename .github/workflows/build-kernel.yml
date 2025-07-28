@@ -26,15 +26,20 @@ on:
         required: false
         type: string
 
+# Add permissions for GITHUB_TOKEN
+permissions:
+  contents: write
+  actions: write
+
 env:
   KERNEL_DIR: ${{ github.workspace }}/kernel
   TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
   OUTPUT_DIR: out
   RELEASE_NAME: MyKernel-${{ github.sha }}
-  KERNEL_REPO: https://github.com/YOUR_USERNAME/YOUR_KERNEL_REPO.git # Replace with your default kernel repo
-  KERNEL_BRANCH: main # Replace with your default kernel branch
-  TOOLCHAIN_REPO: '' # Replace with toolchain repo URL if not in kernel repo
-  TOOLCHAIN_BRANCH: main # Replace with toolchain branch if applicable
+  KERNEL_REPO: https://github.com/unasir008/android_kernel_samsung_a12.git
+  KERNEL_BRANCH: a125f-s6
+  TOOLCHAIN_REPO: ''
+  TOOLCHAIN_BRANCH: main
 
 jobs:
   build-kernel:
@@ -104,8 +109,10 @@ jobs:
         with:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
+          if-no-files-found: warn
+          compression-level: 6
 
-      # Create a GitHub Release (for push or workflow_dispatch)
+      # Create a GitHub Release (only for push or workflow_dispatch)
       - name: Create Release
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/create-release@v1
