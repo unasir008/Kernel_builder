@@ -13,10 +13,12 @@ on:
         description: 'Kernel source repository URL'
         required: true
         type: string
+        default: 'https://github.com/unasir008/android_kernel_samsung_a12.git'
       kernel_branch:
         description: 'Kernel source branch'
         required: true
         type: string
+        default: 'a125f-s6'
       toolchain_repo:
         description: 'Toolchain repository URL (optional)'
         required: false
@@ -45,7 +47,7 @@ env:
   TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
   ANYKERNEL_DIR: ${{ github.workspace }}/anykernel
   OUTPUT_DIR: out
-  RELEASE_NAME: MyKernel-${{ github.sha }}
+  RELEASE_NAME: ProjectX_A125f-s6-v${{ github.run_number }}-kernel
   KERNEL_REPO: https://github.com/unasir008/android_kernel_samsung_a12.git
   KERNEL_BRANCH: a125f-s6
   TOOLCHAIN_REPO: ''
@@ -114,6 +116,10 @@ jobs:
       - name: Package Kernel with AnyKernel3
         run: |
           cd ${{ env.ANYKERNEL_DIR }}
+          if [[ ! -f anykernel.sh ]]; then
+            echo "Error: anykernel.sh not found in AnyKernel repository"
+            exit 1
+          fi
           cp ${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image .
           zip -r9 ${{ env.RELEASE_NAME }}.zip * -x .git README.md *placeholder
           mv ${{ env.RELEASE_NAME }}.zip ${{ env.KERNEL_DIR }}/
