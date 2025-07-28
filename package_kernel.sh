@@ -31,8 +31,7 @@ if [[ -f "${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" ]]; then
 else
     echo "Error: Kernel image not found at ${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}"
     exit 1
-fi
-
+}
 # Check and copy backup kernel image (from your build_kernel.sh)
 if [[ -f "${KERNEL_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" ]]; then
     cp "${KERNEL_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" "release/${KERNEL_IMAGE}-backup" || {
