@@ -26,7 +26,6 @@ on:
         required: false
         type: string
 
-# Add permissions for GITHUB_TOKEN
 permissions:
   contents: write
   actions: write
@@ -109,33 +108,20 @@ jobs:
         with:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 6
 
-      # Create a GitHub Release (only for push or workflow_dispatch)
-      - name: Create Release
+      # Create a GitHub Release and upload asset (only for push or workflow_dispatch)
+      - name: Create Release and Upload Asset
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          release_name: Kernel Build ${{ github.run_number }}
+          name: Kernel Build ${{ github.run_number }}
           body: |
             Automated kernel build for commit ${{ github.sha }}.
             Kernel Source: ${{ env.KERNEL_REPO }} (Branch: ${{ env.KERNEL_BRANCH }})
             Built with GCC 12.3.0 and Clang r416183b1.
           draft: false
           prerelease: false
-
-      # Upload kernel to release
-      - name: Upload Kernel to Release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create-release.outputs.upload_url }}
-          asset_path: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
-          asset_name: ${{ env.RELEASE_NAME }}.zip
-          asset_content_type: application/zip
+          files: ${{ env.KERNEL_DIR }}/${{ env.RELEASE_NAME }}.zip
