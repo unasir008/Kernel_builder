@@ -6,7 +6,13 @@
 KERNEL_DIR="$(pwd)"
 OUTPUT_DIR="${KERNEL_DIR}/out"
 KERNEL_IMAGE="Image"
-RELEASE_NAME="MyKernel-$(date +%Y%m%d-%H%M%S)"
+RELEASE_NAME="${RELEASE_NAME:-MyKernel-$(git rev-parse HEAD)}" # Use env RELEASE_NAME or fallback to commit hash
+
+# Debug: Print environment and paths
+echo "Debug: KERNEL_DIR=${KERNEL_DIR}"
+echo "Debug: OUTPUT_DIR=${OUTPUT_DIR}"
+echo "Debug: KERNEL_IMAGE=${KERNEL_IMAGE}"
+echo "Debug: RELEASE_NAME=${RELEASE_NAME}"
 
 # Package the kernel
 echo "Packaging kernel..."
@@ -15,17 +21,27 @@ cd "${KERNEL_DIR}" || {
     exit 1
 }
 mkdir -p release
-cp "${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" "release/${KERNEL_IMAGE}" || {
+
+# Check and copy primary kernel image
+if [[ -f "${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" ]]; then
+    cp "${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" "release/${KERNEL_IMAGE}" || {
+        echo "Error: Failed to copy ${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}"
+        exit 1
+    }
+else
     echo "Error: Kernel image not found at ${OUTPUT_DIR}/arch/arm64/boot/${KERNEL_IMAGE}"
     exit 1
-}
-# Also copy the image from arch/arm64/boot/Image if it exists (as per your build_kernel.sh)
+fi
+
+# Check and copy backup kernel image (from your build_kernel.sh)
 if [[ -f "${KERNEL_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" ]]; then
     cp "${KERNEL_DIR}/arch/arm64/boot/${KERNEL_IMAGE}" "release/${KERNEL_IMAGE}-backup" || {
         echo "Error: Failed to copy ${KERNEL_DIR}/arch/arm64/boot/${KERNEL_IMAGE}"
         exit 1
     }
 fi
+
+# Create zip
 zip -r "${RELEASE_NAME}.zip" release/ || {
     echo "Error: Failed to create zip package"
     exit 1
